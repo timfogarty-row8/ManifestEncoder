@@ -1,0 +1,97 @@
+//package com.lollyrock.auth
+package com.row8.auth
+
+import java.util.Locale
+import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
+
+import org.scalatra.auth.strategy.{BasicAuthStrategy, BasicAuthSupport}
+import org.scalatra.auth.{ScentryStrategy, ScentrySupport, ScentryConfig}
+import org.scalatra.{Unauthorized, ScalatraBase}
+
+import scala.io.Codec
+import org.scalatra.auth.strategy.BasicAuthSupport
+import org.scalatra.auth.{ScentrySupport, ScentryConfig}
+
+import com.row8.manifest.Settings
+import com.row8.manifest.models._
+
+/**
+ * Authentication support for routes
+ */
+trait AuthenticationSupport extends ScentrySupport[User] with BasicAuthSupport[User] {
+  self: ScalatraBase =>
+
+  protected def fromSession = { case id: String => User(id)  }
+  protected def toSession   = { case usr: User => usr.id }
+
+  val realm = "Bearer Authentication"
+  protected val scentryConfig = (new ScentryConfig {}).asInstanceOf[ScentryConfiguration]
+
+  override protected def configureScentry = {
+    scentry.unauthenticated {
+      scentry.strategies("Bearer").unauthenticated()
+    }
+  }
+
+  override protected def registerAuthStrategies = {
+    scentry.register("Bearer", app => new BearerStrategy(app, realm))
+  }
+
+  // verifies if the request is a Bearer request
+  protected def auth()(implicit request: HttpServletRequest, response: HttpServletResponse) = {
+    val baReq = new BearerAuthRequest(request)
+    if(!baReq.providesAuth) {
+      halt(401, "Unauthenticated")
+    }
+    if(!baReq.isBearerAuth) {
+      halt(400, "Bad Request")
+    }
+    scentry.authenticate("Bearer")
+  }
+
+}
+
+class BearerStrategy (protected override val app: ScalatraBase, realm: String) extends ScentryStrategy[User] {
+
+  implicit def request2BearerAuthRequest(r: HttpServletRequest) = new BearerAuthRequest(r)
+
+  protected def validate(userName: String, password: String): Option[User] = {
+    
+    val payload = Json.obj("name" -> "Ahmed", "email" -> "ahmed@gmail.com")
+//    val jwt = JWT.encode(settings.jwt_secret, payload)
+    
+    if(userName == "scalatra" && password == "scalatra") Some(User("scalatra"))
+    else None
+  }
+
+  protected def getUserId(user: User): String = user.id
+
+  override def isValid(implicit request: HttpServletRequest) = request.isBearerAuth && request.providesAuth
+
+  // catches the case that we got none user
+  override def unauthenticated()(implicit request: HttpServletRequest, response: HttpServletResponse) {
+    app halt Unauthorized()
+  }
+
+  // overwrite required authentication request
+  def authenticate()(implicit request: HttpServletRequest, response: HttpServletResponse): Option[User] = validate(request.token)
+
+  protected def validate(token: String): Option[User] = {
+    // validate the token here and return 
+//    JWT.decode(jwt, Some(settings.jwt_secret))
+  }
+}
+
+class BearerAuthRequest(r: HttpServletRequest) {
+
+  private val AUTHORIZATION_KEYS = List("Authorization", "HTTP_AUTHORIZATION", "X-HTTP_AUTHORIZATION", "X_HTTP_AUTHORIZATION")
+  def parts = authorizationKey map { r.getHeader(_).split(" ", 2).toList } getOrElse Nil
+  def scheme: Option[String] = parts.headOption.map(sch => sch.toLowerCase(Locale.ENGLISH))
+  def token : String = parts.lastOption getOrElse ""
+
+  private def authorizationKey = AUTHORIZATION_KEYS.find(r.getHeader(_) != null)
+
+  def isBearerAuth = (false /: scheme) { (_, sch) => sch == "bearer" }
+  def providesAuth = authorizationKey.isDefined
+
+}
