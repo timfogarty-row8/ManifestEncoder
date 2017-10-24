@@ -5,6 +5,9 @@
 *.swp
 *.out
 
+vendor/*
+!vendor/vendor.json
+
 # rails specific
 *.sqlite3
 config/database.yml
@@ -67,3 +70,4 @@ jrebel.lic
 
 # paulp script
 /.lib/
+/bin/
